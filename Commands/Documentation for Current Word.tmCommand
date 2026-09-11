@@ -8,58 +8,58 @@
 	<string>#!/bin/bash
 [[ -f "${TM_SUPPORT_PATH}/lib/bash_init.sh" ]] &amp;&amp; . "${TM_SUPPORT_PATH}/lib/bash_init.sh"
 
-# set up TM_FIRST_LINE containing the first line of the script.
+# Set up TM_FIRST_LINE with the first line of the script, which is how the
+# helpers know whether the file names an interpreter of its own.
 read first_line
-0&lt;&amp;- # close STDIN
+0&lt;&amp;- # close stdin
 export TM_FIRST_LINE="$first_line"
 
-export PYTHONPATH="$TM_BUNDLE_SUPPORT/DocMate"
-export PYTHONPATH="$TM_SUPPORT_PATH/lib:$PYTHONPATH"
+export PYTHONPATH="$TM_BUNDLE_SUPPORT/DocMate:$TM_SUPPORT_PATH/lib:$PYTHONPATH"
 
-/usr/bin/env python -S - &lt;&lt;PYTHON
-# coding: UTF-8
+"${TM_PYTHON:-python3}" - &lt;&lt;'PYTHON'
 import sys
-from sys import exit
 
+import dialog
+import docmate
 import tm_helpers
 import webpreview
-import docmate
-import dialog
 
 docmate.launch_pydoc_server()
 
-# get current dotted word from the env
 word = tm_helpers.current_word(r"[A-Za-z0-9_\.]*")
 
+
+def redirect(url):
+    print("&lt;meta http-equiv='Refresh' content='0;URL=%s'&gt;" % url)
+
+
+def links(heading, entries, marker):
+    print("&lt;h3&gt;%s&lt;/h3&gt;" % heading)
+    print("&lt;ol style='list-style-type: %s;'&gt;" % ("lower-alpha" if marker == "a" else "decimal"))
+    for index, (description, url) in enumerate(entries):
+        key = chr(ord(marker) + index)
+        print('\t&lt;li&gt;&lt;a href="%s" accesskey="%s"&gt;%s&lt;/a&gt;&lt;/li&gt;' % (url, key, description))
+    print("&lt;/ol&gt;")
+
+
 if not word:
-    print "&lt;meta http-equiv='Refresh' content='0;URL=%s'&gt;" % docmate.pydoc_url()[0]
+    redirect(docmate.pydoc_url()[0])
+    sys.exit()
+
+library = docmate.library_docs(word)
+local = docmate.local_docs(word)
+
+if local and not library:
+    redirect(local[0][1])
+elif not local and not library:
+    redirect(docmate.pydoc_url()[0])
 else:
-    library_docs = docmate.library_docs(word)
-    local_docs = docmate.local_docs(word)
-    if library_docs:
-        print webpreview.html_header("DocMate", "Python")
-        print "&lt;h3&gt;Python Library Documentation&lt;/h3&gt;\n"
-        print "&lt;ol style='list-style-type: lower-alpha;'&gt;\n"
-        for n, opt in enumerate(library_docs):
-            desc, url = opt
-            accesskey = chr(ord("a") + n)
-            print '\t&lt;li&gt;&lt;a href="%s" accesskey="%s"&gt;%s&lt;/a&gt;&lt;/li&gt;\n' % (url, accesskey, desc)
-        print "&lt;/ol&gt;\n"
-    if local_docs and library_docs:
-        print "&lt;h3&gt;Pydoc Documentation&lt;/h3&gt;"
-        print "&lt;ol style='list-style-type: decimal;'&gt;\n"
-        for n, opt in enumerate(local_docs):
-            desc, url = opt
-            accesskey = chr(ord("1") + n)
-            print '\t&lt;li&gt;&lt;a href="%s" accesskey="%s"&gt;%s&lt;/a&gt;&lt;/li&gt;\n' % (url, accesskey, desc)
-        print "&lt;/ol&gt;\n"
-        print webpreview.html_footer()
-    elif local_docs and not library_docs:
-        print "&lt;meta http-equiv='Refresh' content='0;URL=%s'&gt;" % local_docs[0][1]
-    else:
-        print "&lt;meta http-equiv='Refresh' content='0;URL=%s'&gt;" % docmate.pydoc_url()[0]
-PYTHON
-</string>
+    print(webpreview.html_header("DocMate", "Python"))
+    links("Python Library Documentation", library, "a")
+    if local:
+        links("Pydoc Documentation", local, "1")
+    print(webpreview.html_footer())
+PYTHON</string>
 	<key>input</key>
 	<string>document</string>
 	<key>inputFormat</key>
