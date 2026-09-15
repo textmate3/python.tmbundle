@@ -1,85 +1,103 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
 	<key>beforeRunningCommand</key>
 	<string>nop</string>
 	<key>command</key>
-	<string>#!/usr/bin/env python -S
-# coding: utf-8
+	<string>#!/usr/bin/env python3
+"""Turn the name of one of Python's special methods into a snippet for it.
 
-# This program takes in the name of one of python's special methods, and
-# spits a snippet out.  If the name is unknown, make a regular (non-magic)
-# method/function
+An unknown name makes an ordinary method instead. The three tables below are
+Python 3's special methods: the ones Python 2 had and Python 3 dropped, such
+as __nonzero__, __div__, __cmp__, __coerce__, __unicode__ and the slice
+methods, are gone, and the ones Python 3 added are here.
+"""
 
-# these functions take no argument except 'self'
-selfList = (
-    'del', 'repr', 'str', 'hash', 'nonzero', 'unicode', 'len', 'iter', 'neg',
-    'pos', 'abs', 'invert', 'complex', 'int', 'long', 'float', 'oct', 'hex',
-    'index', 'enter'
+import os
+import sys
+
+# Special methods taking nothing but self.
+SELF_ONLY = (
+    'del', 'repr', 'str', 'bytes', 'hash', 'bool', 'len', 'length_hint',
+    'iter', 'reversed', 'next', 'aiter', 'anext', 'neg', 'pos', 'abs',
+    'invert', 'complex', 'int', 'float', 'index', 'trunc', 'floor', 'ceil',
+    'enter', 'aenter', 'fspath', 'dir', 'sizeof', 'copy', 'deepcopy',
+    'getnewargs', 'getstate', 'reduce', 'await',
 )
-# these binary operators take both 'self' and 'other' as arguments
-selfOtherList = (
- 'lt', 'le', 'eq', 'ne', 'gt', 'ge', 'cmp', 'add', 'sub', 'mul', 'floordiv',
- 'mod', 'divmod', 'lshift', 'rshift', 'and', 'xor', 'or', 'div', 'truediv',
- 'radd', 'rsub', 'rmul', 'rdiv', 'rtruediv', 'rfloordiv', 'rmod', 'rdivmod',
- 'rpow', 'rlshift', 'rrshift', 'rand', 'rxor', 'ror', 'iadd', 'isub', 'imul',
- 'idiv', 'itruediv', 'ifloordiv', 'imod', 'ilshift', 'irshift', 'iand',
- 'ixor', 'ior', 'coerce', 'pow', 'ipow'
+
+# Binary operators, taking self and other.
+SELF_AND_OTHER = (
+    'lt', 'le', 'eq', 'ne', 'gt', 'ge', 'add', 'sub', 'mul', 'matmul',
+    'truediv', 'floordiv', 'mod', 'divmod', 'pow', 'lshift', 'rshift', 'and',
+    'xor', 'or', 'radd', 'rsub', 'rmul', 'rmatmul', 'rtruediv', 'rfloordiv',
+    'rmod', 'rdivmod', 'rpow', 'rlshift', 'rrshift', 'rand', 'rxor', 'ror',
+    'iadd', 'isub', 'imul', 'imatmul', 'itruediv', 'ifloordiv', 'imod',
+    'ipow', 'ilshift', 'irshift', 'iand', 'ixor', 'ior',
 )
-# these functions take some argument(s) other than self
-selfAndMore = {
-         'getattr' : 'name',
-         'delattr' : 'name',
-    'getattribute' : 'name',
-         'setattr' : 'name, value',
-         'getitem' : 'key',
-         'delitem' : 'key',
-         'setitem' : 'key, value',
-             'get' : 'instance, owner',
-             'set' : 'instance, value',
-          'delete' : 'instance',
-        'contains' : 'item',
-        'setslice' : 'i, j, sequence',
-        'delslice' : 'i, j',
-            'exit' : 'exc_type, exc_value, traceback',
+
+# Everything else, with the arguments it takes after self.
+SELF_AND_MORE = {
+       'getattr': 'name',
+       'delattr': 'name',
+  'getattribute': 'name',
+       'setattr': 'name, value',
+       'getitem': 'key',
+       'delitem': 'key',
+       'setitem': 'key, value',
+      'missing': 'key',
+           'get': 'instance, owner',
+           'set': 'instance, value',
+        'delete': 'instance',
+      'set_name': 'owner, name',
+      'contains': 'item',
+        'format': 'format_spec',
+          'round': 'ndigits=None',
+          'exit': 'exception_type, exception, traceback',
+         'aexit': 'exception_type, exception, traceback',
+ 'init_subclass': 'cls, **kwargs',
+ 'class_getitem': 'cls, item',
+     'setstate': 'state',
+  'reduce_ex': 'protocol',
 }
 
-sPass = '\t${4/.+/"""/}${4:docstring for %s}${4/.+/"""\n/}${4/.+/\t/}${0:pass}'
+BODY = '\t${4/.+/"""/}${4:docstring for %s}${4/.+/"""\n/}${4/.+/\t/}${0:pass}'
 
-def defLine(func, args):
-    return ''.join(["def __", func, "__(", args, "):\n", sPass])
+
+def special(name, arguments):
+    # The docstring placeholder is filled in here too. It used to be filled in
+    # only for ordinary functions, so every special method arrived with a
+    # literal %s where its own name should have been.
+    return ''.join(['def __', name, '__(', arguments, '):\n', BODY % ('__%s__' % name)])
+
 
 def make_snippet(name):
-    if name in selfList:
-        return defLine(name, 'self')
-    
-    elif name in selfOtherList:
-        return defLine(name, 'self, other')
-    
-    elif name in selfAndMore:
-        return defLine(name, 'self, ' + selfAndMore[name])
-    
-    elif name in ('init', 'call', 'new'):
-        return defLine(name, 'self${2/([^,])?.*/(?1:, )/}${2:arg}')
-        
-    else:
-        return ''.join(['def ', name, '(${3:self${2/([^,])?.*/(?1:, )/}${2:arg}}):\n', sPass % name])
+    if name in SELF_ONLY:
+        return special(name, 'self')
 
-# actually print the thing out, using the current word in TM
-from os import environ as env
-from sys import exit
+    if name in SELF_AND_OTHER:
+        return special(name, 'self, other')
+
+    if name in SELF_AND_MORE:
+        return special(name, 'self, ' + SELF_AND_MORE[name])
+
+    if name in ('init', 'call', 'new', 'post_init'):
+        return special(name, 'self${2/([^,])?.*/(?1:, )/}${2:arg}')
+
+    return ''.join(['def ', name, '(${3:self${2/([^,])?.*/(?1:, )/}${2:arg}}):\n', BODY % name])
+
+
 try:
-    print make_snippet(env['TM_CURRENT_WORD'])
+    print(make_snippet(os.environ['TM_CURRENT_WORD']))
 except KeyError:
-    print 'Please type the new function\'s name\n(you can also use def⇥).'
-    exit(206)</string>
+    print("Please type the new function's name\n(you can also use def⇥).")
+    sys.exit(206)</string>
 	<key>fallbackInput</key>
 	<string>word</string>
 	<key>input</key>
 	<string>selection</string>
 	<key>keyEquivalent</key>
-	<string>$</string>
+	<string>$&#13;</string>
 	<key>name</key>
 	<string>New Method/Function</string>
 	<key>output</key>

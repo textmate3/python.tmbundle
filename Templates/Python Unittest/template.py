@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# encoding: utf-8
+#!/usr/bin/env python3
 """
 ${TM_NEW_FILE_BASENAME}.py
 
@@ -14,6 +13,6 @@ class ${TM_NEW_FILE_BASENAME}(unittest.TestCase):
 	def setUp(self):
 		pass
 
-    
-if __name__ == '__main__':
+
+if __name__ == "__main__":
 	unittest.main()

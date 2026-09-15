@@ -11,7 +11,7 @@
 # if iTerm is open or if TM_TERMINAL is set to iTerm then use iTerm
 # otherwise default to Terminal.app since that is standard.
 TP=${TM_TERMINAL:=Terminal}
-TPY=${TM_PYTHON:=python}
+TPY=${TM_PYTHON:=python3}
 
 iTerm_running () {
     ruby &lt;&lt;"RUBY"

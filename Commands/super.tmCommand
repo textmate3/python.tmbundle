@@ -5,80 +5,80 @@
 	<key>beforeRunningCommand</key>
 	<string>nop</string>
 	<key>command</key>
-	<string>#!/usr/bin/env python
-import sys
-import os
+	<string>#!/usr/bin/env python3
+"""Expand to a call on the superclass of the method the caret is in.
+
+Python 3 takes no arguments to super() inside a method body, so this writes
+super().name(...) rather than super(Class, self).name(...), which is the
+spelling the language documentation calls out as the one to prefer.
+"""
+
 import ast
+import os
+import sys
+
+LINE = int(os.environ['TM_LINE_NUMBER'])
+COLUMN = int(os.environ['TM_LINE_INDEX'])
+
+lines = sys.stdin.readlines()
+
+# The tab trigger took the word away and a hole does not parse, so put it back.
+line = lines[LINE - 1] if LINE &lt;= len(lines) else ''
+lines[LINE - 1:LINE] = [line[:COLUMN] + 'super' + line[COLUMN:]]
 
 
+def enclosing_function(tree, line):
+    """The innermost function whose body contains `line`, or None.
 
-LINE = int(os.getenv('TM_LINE_NUMBER'))
-COL = int(os.getenv('TM_LINE_INDEX'))
+    Python records end_lineno on every node, so containment is a comparison
+    rather than the guess this command used to make about having walked past
+    the node it wanted.
+    """
+    found = None
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.lineno &lt;= line &lt;= (node.end_lineno or node.lineno):
+            if found is None or node.lineno &gt;= found.lineno:
+                found = node
+    return found
 
-source_lines = sys.stdin.readlines()
 
-line = source_lines[LINE-1]
-source_lines[LINE-1] = line[:COL] + 'super' + line[COL:]
-source = ''.join(source_lines)
+def arguments_of(function):
+    """The function's parameters as snippet tab stops, without self."""
+    if function is None:
+        return []
 
-class SuperVisitor(ast.NodeVisitor):
-	
-	current_func = None
-	current_args = None
-	snippet = None
-	
-	def __init__(self, current_class=None):
-		self.current_class = current_class
-	
-	def generic_visit(self, node):
-		if getattr(node, 'lineno', -1) &gt;= LINE and getattr(node, 'col_offset', -1) &gt;= COL:
-			# We just passed the node we're looking for, last snippet must be it
-			print SuperVisitor.snippet
-			sys.exit()
-		self_str = "self"
-		arg_strs = []
-		if self.current_args:
-			tab_marker = 4
-			if self.current_args.args:
-				self_str = getattr(self.current_args.args[0],'id', 'self')
-				for arg in self.current_args.args[1:]:
-					arg_strs.append("${%d:%s}" % (tab_marker, arg.id))
-					tab_marker += 1
-			if self.current_args.vararg:
-				arg_strs.append("${%d:*%s}" % (tab_marker, self.current_args.vararg))
-				tab_marker += 1
-			if self.current_args.kwarg:
-				arg_strs.append("${%d:**%s}" % (tab_marker, self.current_args.kwarg))
-				tab_marker += 1
-				
-				
-		SuperVisitor.snippet = "super(${1:%s}, ${2:%s}).${3:%s}(%s)"%(
-			getattr(self.current_class, 'name', 'BaseClass'), 
-			self_str, 
-			getattr(self.current_func, 'name', 'function_name'),
-			', '.join(arg_strs)
-		)
-		return super(SuperVisitor, self).generic_visit(node)
-	
-	# 'arguments' always means function argspecs (never call args)
-	def visit_arguments(self, node):
-		if not self.current_args and self.current_class and self.current_func:
-			self.current_args = node
-		return self.generic_visit(node)
-	
-	def visit_FunctionDef(self, node):
-		if not self.current_func:
-			self.current_func = node
-			returning = self.generic_visit(node)
-			self.current_func = None
-			self.current_args = None
-		return self.generic_visit(node)
-	
-	def visit_ClassDef(self, node):
-		return SuperVisitor(node).generic_visit(node)
-	
+    spec = function.args
+    positional = list(spec.posonlyargs) + list(spec.args)
+    parts = []
 
-SuperVisitor().visit(ast.parse(source))</string>
+    for argument in positional[1:]:
+        parts.append(argument.arg)
+    if spec.vararg:
+        parts.append('*' + spec.vararg.arg)
+    for argument in spec.kwonlyargs:
+        parts.append('%s=%s' % (argument.arg, argument.arg))
+    if spec.kwarg:
+        parts.append('**' + spec.kwarg.arg)
+
+    return parts
+
+
+try:
+    tree = ast.parse(''.join(lines))
+except SyntaxError:
+    # An incomplete file is the normal case while typing, so say the useful
+    # thing rather than nothing.
+    print('super().${1:__init__}($2)')
+    sys.exit()
+
+function = enclosing_function(tree, LINE)
+name = function.name if function else '__init__'
+
+parts = arguments_of(function)
+snippet_arguments = ', '.join('${%d:%s}' % (index + 2, part) for index, part in enumerate(parts))
+print('super().${1:%s}(%s)' % (name, snippet_arguments))</string>
 	<key>input</key>
 	<string>document</string>
 	<key>name</key>

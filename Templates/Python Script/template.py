@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-# encoding: utf-8
+#!/usr/bin/env python3
 """
 ${TM_NEW_FILE_BASENAME}.py
 
@@ -8,13 +7,11 @@ Copyright (c) ${TM_YEAR} ${TM_ORGANIZATION_NAME}. All rights reserved.
 """
 
 import sys
-import os
 
 
 def main():
 	pass
 
 
-if __name__ == '__main__':
-	main()
-
+if __name__ == "__main__":
+	sys.exit(main())

@@ -1,86 +1,88 @@
-# -*- coding: UTF-8 -*-
+"""Find documentation for a word, locally through pydoc and online at python.org.
 
-import re
+This used to carry a 536 KB pickle mapping names to `docs.python.org/lib/*.html`
+URLs, a layout python.org stopped using after Python 2.5, and it started the
+pydoc server by monkey-patching it through the `new` module, which Python
+removed. Both jobs are things Python now does itself.
+"""
+
+import os
+import pydoc
+import subprocess
 import sys
-from os import system, path, mkdir, environ as env
-import cPickle
-import urllib2
-import inspect
-from urlparse import urljoin as _urljoin
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 
-# make sure Support/lib is on the path
-support_lib = path.join(env["TM_SUPPORT_PATH"], "lib")
-if support_lib not in sys.path:
-    sys.path.insert(0, support_lib)
+PORT = 7464
+LOCAL_URL = "http://localhost:%d/" % PORT
+LOG = "/tmp/textmate_pydoc_%d.log" % PORT
 
-import tm_helpers
+# TM_PYTHONDOCS lets a person point at a local copy of the documentation.
+PYTHON_DOCS = os.environ.get("TM_PYTHONDOCS", "https://docs.python.org/3")
 
-if "TM_PYTHONDOCS" in env:
-    PYTHONDOCS = env["TM_PYTHONDOCS"]
-else:
-    PYTHONDOCS = "http://docs.python.org"
 
-TIMEOUT = 5 * 60
-_PYDOC_PORT = 7400
-_PYDOC_URL = "http://localhost:%i/"
+def python_version():
+    return "%d.%d" % sys.version_info[:2]
 
-prefdir = path.join(env["HOME"], "Library/Preferences/com.macromates.textmate.python")
-if not path.exists(prefdir):
-    mkdir(prefdir)
-hitcount_path = path.join(prefdir, 'docmate_url_hitcount')
 
-def urljoin(base, *fragments):
-    for f in fragments:
-        base = _urljoin(base, f, allow_fragments=True)
-    return base
-
-def accessible(url):
-    """ True if the url is accessible. """
+def is_serving():
     try:
-        urllib2.urlopen(url)
+        urllib.request.urlopen(LOCAL_URL, timeout=1)
         return True
-    except urllib2.URLError:
+    except (urllib.error.URLError, OSError):
         return False
 
-def pydoc_url():
-    """ Return a URL to pydoc for the python returned by tm_helpers.env_python(). """
-    python, version = tm_helpers.env_python()
-    port = _PYDOC_PORT + version
-    url = _PYDOC_URL % port
-    return url, port
 
 def launch_pydoc_server():
-    server = path.join(env["TM_BUNDLE_SUPPORT"], "DocMate/pydoc_server.py")
-    python, version = tm_helpers.env_python()
-    url, port = pydoc_url()
-    if not accessible(url):
-        # launch pydoc.
-        system('/usr/bin/nohup %s %s %i %i\
-                    1>> /tmp/pydoc.log 2>> /tmp/pydoc.log &' \
-                    % (python, tm_helpers.sh_escape(server), port, TIMEOUT))
-    return url
+    """Start pydoc's own server if it is not already up, and answer its URL."""
+    if is_serving():
+        return LOCAL_URL
+
+    with open(LOG, "a") as log:
+        subprocess.Popen(
+            [sys.executable, "-m", "pydoc", "-p", str(PORT)],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=log,
+            start_new_session=True,
+        )
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if is_serving():
+            break
+        time.sleep(0.25)
+    return LOCAL_URL
+
+
+def pydoc_url():
+    return LOCAL_URL, PORT
+
 
 def library_docs(word):
-    # build a list of matching library docs
-    paths = []
-    try:
-        f = open(path.join(env["TM_BUNDLE_SUPPORT"], 'DocMate/lib.index'))
-        index = cPickle.load(f)
-    finally:
-        f.close()
-    word_re = re.compile(r"\b(%s)\b" % re.sub('[^a-zA-Z0-9_\. ]+', '', word))
-    matching_keys = [key for key in index if word_re.search(key)]
-    for key in matching_keys:
-        for desc, url in index[key]:
-            paths.append((desc, urljoin(PYTHONDOCS, "lib/", url)))
-    return paths
+    """A link into the official documentation for `word`.
+
+    A search rather than a guessed page, since python.org has a search that
+    is current by definition and a URL scheme that is not ours to predict.
+    """
+    if not word:
+        return []
+
+    query = urllib.parse.urlencode({"q": word, "check_keywords": "yes", "area": "default"})
+    return [("%s in the Python %s documentation" % (word, python_version()),
+             "%s/search.html?%s" % (PYTHON_DOCS.rstrip("/"), query))]
+
 
 def local_docs(word):
-    import pydoc
+    """A link to pydoc's page for `word`, when pydoc can resolve it here."""
+    if not word:
+        return []
+
     try:
-        obj, name = pydoc.resolve(word)
-    except ImportError:
-        return None
-    desc = pydoc.describe(obj)
-    return [(desc, urljoin(pydoc_url()[0], "%s.html" % word))]
+        target, name = pydoc.resolve(word)
+    except (ImportError, pydoc.ErrorDuringImport):
+        return []
+
+    return [(pydoc.describe(target), "%s%s.html" % (LOCAL_URL, name))]
